@@ -56,11 +56,11 @@ def get_reverse(objs):
     raise Exception('We got a URL reverse issue: %s. This is a known issue but please still submit a ticket at https://github.com/fangli/django-saml2-auth/issues/new' % str(objs))
 
 
-def _get_saml_client(domain):
+def _get_saml_client(domain, metadata_conf_url):
     acs_url = domain + get_reverse([acs, 'acs', 'django_saml2_auth:acs'])
     import tempfile, os
     f = tempfile.NamedTemporaryFile(mode='wb', delete=False)
-    f.write(_urllib.urlopen(settings.SAML2_AUTH['METADATA_AUTO_CONF_URL']).read())
+    f.write(_urllib.urlopen(metadata_conf_url).read())
     f.close()
     saml_settings = {
         'metadata': {
@@ -117,7 +117,7 @@ def _create_new_user(username, email, firstname, lastname):
 
 @csrf_exempt
 def acs(r):
-    saml_client = _get_saml_client(get_current_domain(r))
+    saml_client = _get_saml_client(get_current_domain(r), r.session.get('saml_metadata_conf_url'))
     resp = r.POST.get('SAMLResponse', None)
     next_url = r.session.get('login_next_url', get_reverse('admin:index'))
 
@@ -177,7 +177,7 @@ def signin(r):
 
     r.session['login_next_url'] = next_url
 
-    saml_client = _get_saml_client(get_current_domain(r))
+    saml_client = _get_saml_client(get_current_domain(r), r.session.get('saml_metadata_conf_url'))
     _, info = saml_client.prepare_for_authenticate()
 
     redirect_url = None
