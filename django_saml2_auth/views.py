@@ -117,7 +117,11 @@ def _create_new_user(username, email, firstname, lastname):
 
 @csrf_exempt
 def acs(r):
-    saml_client = _get_saml_client(get_current_domain(r), r.session.get('saml_metadata_conf_url'))
+    saml_metadata_conf_url = r.session.get('saml_metadata_conf_url')
+    if not saml_metadata_conf_url:
+        return HttpResponseRedirect(get_reverse('login'))
+
+    saml_client = _get_saml_client(get_current_domain(r), saml_metadata_conf_url)
     resp = r.POST.get('SAMLResponse', None)
     next_url = r.session.get('login_next_url', get_reverse('admin:index'))
 
