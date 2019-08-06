@@ -13,14 +13,20 @@ from saml2.config import Config as Saml2Config
 from django import get_version
 from pkg_resources import parse_version
 from django.conf import settings
-from django.contrib.auth.models import (User, Group)
+from django.contrib.auth.models import Group
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth import login, logout
+from django.contrib.auth import login, logout, get_user_model
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.template import TemplateDoesNotExist
 from django.http import HttpResponseRedirect
 from django.utils.http import is_safe_url
+
+from rest_auth.utils import jwt_encode
+
+
+# default User or custom User. Now both will work.
+User = get_user_model()
 
 try:
     import urllib2 as _urllib
@@ -36,6 +42,8 @@ else:
 
 
 def get_current_domain(r):
+    if 'ASSERTION_URL' in settings.SAML2_AUTH:
+        return settings.SAML2_AUTH['ASSERTION_URL']
     return '{scheme}://{host}'.format(
         scheme='https' if r.is_secure() else 'http',
         host=r.get_host(),
@@ -44,7 +52,10 @@ def get_current_domain(r):
 
 def get_reverse(objs):
     '''In order to support different django version, I have to do this '''
-    from django.core.urlresolvers import reverse
+    if parse_version(get_version()) >= parse_version('2.0'):
+        from django.urls import reverse
+    else:
+        from django.core.urlresolvers import reverse
     if objs.__class__.__name__ not in ['list', 'tuple']:
         objs = [objs]
 
@@ -56,16 +67,40 @@ def get_reverse(objs):
     raise Exception('We got a URL reverse issue: %s. This is a known issue but please still submit a ticket at https://github.com/fangli/django-saml2-auth/issues/new' % str(objs))
 
 
+def _get_metadata():
+    if 'METADATA_LOCAL_FILE_PATH' in settings.SAML2_AUTH:
+        return {
+            'local': [settings.SAML2_AUTH['METADATA_LOCAL_FILE_PATH']]
+        }
+    else:
+        return {
+            'remote': [
+                {
+                    "url": settings.SAML2_AUTH['METADATA_AUTO_CONF_URL'],
+                },
+            ]
+        }
+
+
+# BEGIN TESORIO CHANGES
+# def _get_saml_client(domain):
 def _get_saml_client(domain, metadata_conf_url):
+    #
+    # Discussion:
+    # https://github.com/Tesorio/django-saml2-auth/commit/1c6326e33135807aa513c18dd2f4eeff674d1a41
+    #
+    # > the reason we did this was because django-saml2-auth was built for
+    # > only 1 SSO company to use it. Like as if it was an internal
+    # > application. We wanted to provide SAML for our customers, so we used
+    # > this as a way to do that.
+    #
+    settings.SAML2_AUTH['METADATA_AUTO_CONF_URL'] = metadata_conf_url
+# END TESORIO CHANGES
     acs_url = domain + get_reverse([acs, 'acs', 'django_saml2_auth:acs'])
-    import tempfile, os
-    f = tempfile.NamedTemporaryFile(mode='wb', delete=False)
-    f.write(_urllib.urlopen(metadata_conf_url).read())
-    f.close()
+    metadata = _get_metadata()
+
     saml_settings = {
-        'metadata': {
-            'local': [f.name],
-        },
+        'metadata': metadata,
         'service': {
             'sp': {
                 'endpoints': {
@@ -83,11 +118,21 @@ def _get_saml_client(domain, metadata_conf_url):
         },
     }
 
+    # BEGIN TESORIO CHANGES
+    # if 'ENTITY_ID' in settings.SAML2_AUTH:
+    #     saml_settings['entityid'] = settings.SAML2_AUTH['ENTITY_ID']
+    #
+    # pysaml2>4.5 requires EntityId to be set
+    saml_settings['entityid'] = acs_url
+    # END TESORIO CHANGES
+
+    if 'NAME_ID_FORMAT' in settings.SAML2_AUTH:
+        saml_settings['service']['sp']['name_id_format'] = settings.SAML2_AUTH['NAME_ID_FORMAT']
+
     spConfig = Saml2Config()
     spConfig.load(saml_settings)
     spConfig.allow_unknown_attributes = True
     saml_client = Saml2Client(config=spConfig)
-    os.unlink(f.name)
     return saml_client
 
 
@@ -96,7 +141,7 @@ def welcome(r):
     try:
         return render(r, 'django_saml2_auth/welcome.html', {'user': r.user})
     except TemplateDoesNotExist:
-        return HttpResponseRedirect(get_reverse('admin:index'))
+        return HttpResponseRedirect(settings.SAML2_AUTH.get('DEFAULT_NEXT_URL', get_reverse('admin:index')))
 
 
 def denied(r):
@@ -107,7 +152,11 @@ def _create_new_user(username, email, firstname, lastname):
     user = User.objects.create_user(username, email)
     user.first_name = firstname
     user.last_name = lastname
-    user.groups = [Group.objects.get(name=x) for x in settings.SAML2_AUTH.get('NEW_USER_PROFILE', {}).get('USER_GROUPS', [])]
+    groups = [Group.objects.get(name=x) for x in settings.SAML2_AUTH.get('NEW_USER_PROFILE', {}).get('USER_GROUPS', [])]
+    if parse_version(get_version()) >= parse_version('2.0'):
+        user.groups.set(groups)
+    else:
+        user.groups = groups
     user.is_active = settings.SAML2_AUTH.get('NEW_USER_PROFILE', {}).get('ACTIVE_STATUS', True)
     user.is_staff = settings.SAML2_AUTH.get('NEW_USER_PROFILE', {}).get('STAFF_STATUS', True)
     user.is_superuser = settings.SAML2_AUTH.get('NEW_USER_PROFILE', {}).get('SUPERUSER_STATUS', False)
@@ -117,13 +166,16 @@ def _create_new_user(username, email, firstname, lastname):
 
 @csrf_exempt
 def acs(r):
+    # BEGIN TESORIO CHANGES
+    # saml_client = _get_saml_client(get_current_domain(r))
     saml_metadata_conf_url = r.session.get('saml_metadata_conf_url')
     if not saml_metadata_conf_url:
         return HttpResponseRedirect(get_reverse('login'))
 
     saml_client = _get_saml_client(get_current_domain(r), saml_metadata_conf_url)
+    # END TESORIO CHANGES
     resp = r.POST.get('SAMLResponse', None)
-    next_url = r.session.get('login_next_url', get_reverse('admin:index'))
+    next_url = r.session.get('login_next_url', settings.SAML2_AUTH.get('DEFAULT_NEXT_URL', get_reverse('admin:index')))
 
     if not resp:
         return HttpResponseRedirect(get_reverse([denied, 'denied', 'django_saml2_auth:denied']))
@@ -143,10 +195,22 @@ def acs(r):
     user_last_name = user_identity[settings.SAML2_AUTH.get('ATTRIBUTES_MAP', {}).get('last_name', 'LastName')][0]
 
     try:
+        # BEGIN TESORIO CHANGES
+        # target_user = User.objects.get(username=user_name)
         target_user = User.objects.get(email=user_email)
+        # END TESORIO CHANGES
         if settings.SAML2_AUTH.get('TRIGGER', {}).get('BEFORE_LOGIN', None):
             import_string(settings.SAML2_AUTH['TRIGGER']['BEFORE_LOGIN'])(user_identity)
     except User.DoesNotExist:
+        # BEGIN TESORIO CHANGES
+        # new_user_should_be_created = settings.SAML2_AUTH.get('CREATE_USER', True)
+        # if new_user_should_be_created: 
+        #     target_user = _create_new_user(user_name, user_email, user_first_name, user_last_name)
+        #     if settings.SAML2_AUTH.get('TRIGGER', {}).get('CREATE_USER', None):
+        #         import_string(settings.SAML2_AUTH['TRIGGER']['CREATE_USER'])(user_identity)
+        #     is_new_user = True
+        # else:
+        #     return HttpResponseRedirect(get_reverse([denied, 'denied', 'django_saml2_auth:denied']))
         return HttpResponseRedirect('/login/?sso_login_no_user=true')
 
     r.session.flush()
@@ -157,6 +221,25 @@ def acs(r):
     else:
         return HttpResponseRedirect(get_reverse([denied, 'denied', 'django_saml2_auth:denied']))
 
+    # BEGIN TESORIO CHANGES
+    # if settings.SAML2_AUTH.get('USE_JWT') is True:
+    #     # We use JWT auth send token to frontend
+    #     jwt_token = jwt_encode(target_user)
+    #     query = '?uid={}&token={}'.format(target_user.id, jwt_token)
+
+    #     frontend_url = settings.SAML2_AUTH.get(
+    #         'FRONTEND_URL', next_url)
+
+    #     return HttpResponseRedirect(frontend_url+query)
+
+    # if is_new_user:
+    #     try:
+    #         return render(r, 'django_saml2_auth/welcome.html', {'user': r.user})
+    #     except TemplateDoesNotExist:
+    #         return HttpResponseRedirect(next_url)
+    # else:
+    #     return HttpResponseRedirect(next_url)
+    # END TESORIO CHANGES
     return HttpResponseRedirect(next_url)
 
 
@@ -167,21 +250,29 @@ def signin(r):
     except:
         import urllib.parse as _urlparse
         from urllib.parse import unquote
-    next_url = r.GET.get('next', get_reverse('admin:index'))
+    next_url = r.GET.get('next', settings.SAML2_AUTH.get('DEFAULT_NEXT_URL', get_reverse('admin:index')))
 
     try:
         if 'next=' in unquote(next_url):
             next_url = _urlparse.parse_qs(_urlparse.urlparse(unquote(next_url)).query)['next'][0]
     except:
-        next_url = r.GET.get('next', get_reverse('admin:index'))
+        next_url = r.GET.get('next', settings.SAML2_AUTH.get('DEFAULT_NEXT_URL', get_reverse('admin:index')))
 
     # Only permit signin requests where the next_url is a safe URL
-    if not is_safe_url(next_url):
+    if parse_version(get_version()) >= parse_version('2.0'):
+        url_ok = is_safe_url(next_url, None)
+    else:
+        url_ok = is_safe_url(next_url)
+
+    if not url_ok:
         return HttpResponseRedirect(get_reverse([denied, 'denied', 'django_saml2_auth:denied']))
 
     r.session['login_next_url'] = next_url
 
+    # BEGIN TESORIO CHANGES
+    # saml_client = _get_saml_client(get_current_domain(r))
     saml_client = _get_saml_client(get_current_domain(r), r.session.get('saml_metadata_conf_url'))
+    # END TESORIO CHANGES
     _, info = saml_client.prepare_for_authenticate()
 
     redirect_url = None

@@ -3,7 +3,7 @@ Django SAML2 Authentication Made Easy
 =====================================
 
 :Author: Fang Li
-:Version: Use 1.1.4 for Django <=1.9 and 2.x.x for Django >= 1.8
+:Version: Use 1.1.4 for Django <=1.9 and 2.x.x for Django >= 1.9
 
 .. image:: https://img.shields.io/pypi/pyversions/django-saml2-auth.svg
     :target: https://pypi.python.org/pypi/django-saml2-auth
@@ -64,6 +64,8 @@ xmlsec is also required by pysaml2:
     # yum install xmlsec1
     // or
     # apt-get install xmlsec1
+    // Mac
+    # brew install xmlsec1
 
 
 What does this plugin do?
@@ -96,9 +98,13 @@ How to use?
         url(r'^saml2_auth/', include('django_saml2_auth.urls')),
 
         # The following line will replace the default user login with SAML2 (optional)
+        # If you want to specific the after-login-redirect-URL, use parameter "?next=/the/path/you/want"
+        # with this view.
         url(r'^accounts/login/$', django_saml2_auth.views.signin),
 
         # The following line will replace the admin login with SAML2 (optional)
+        # If you want to specific the after-login-redirect-URL, use parameter "?next=/the/path/you/want"
+        # with this view.
         url(r'^admin/login/$', django_saml2_auth.views.signin),
 
 #. Add 'django_saml2_auth' to INSTALLED_APPS
@@ -119,10 +125,13 @@ How to use?
     .. code-block:: python
 
         SAML2_AUTH = {
-            # Required setting
+            # Metadata is required, choose either remote url or local file path
             'METADATA_AUTO_CONF_URL': '[The auto(dynamic) metadata configuration URL of SAML2]',
+            'METADATA_LOCAL_FILE_PATH': '[The metadata configuration file path]',
 
-            # Optional settings
+            # Optional settings below
+            'DEFAULT_NEXT_URL': '/admin',  # Custom target redirect URL after the user get logged in. Default to /admin if not set. This setting will be overwritten if you have parameter ?next= specificed in the login URL.
+            'CREATE_USER': 'TRUE', # Create a new Django user when a new user logs in. Defaults to True.
             'NEW_USER_PROFILE': {
                 'USER_GROUPS': [],  # The default group name when a new user logs in
                 'ACTIVE_STATUS': True,  # The default active status for new users
@@ -139,6 +148,11 @@ How to use?
                 'CREATE_USER': 'path.to.your.new.user.hook.method',
                 'BEFORE_LOGIN': 'path.to.your.login.hook.method',
             },
+            'ASSERTION_URL': 'https://mysite.com', # Custom URL to validate incoming SAML requests against
+            'ENTITY_ID': 'https://mysite.com/saml2_auth/acs/', # Populates the Issuer element in authn request
+            'NAME_ID_FORMAT': FormatString, # Sets the Format property of authn NameIDPolicy element
+            'USE_JWT': False, # Set this to True if you are running a Single Page Application (SPA) with Django Rest Framework (DRF), and are using JWT authentication to authorize client users
+            'FRONTEND_URL': 'https://myfrontendclient.com', # Redirect URL for the client if you are using JWT auth with DRF. See explanation below
         }
 
 #. In your SAML2 SSO identity provider, set the Single-sign-on URL and Audience
@@ -149,6 +163,10 @@ Explanation
 -----------
 
 **METADATA_AUTO_CONF_URL** Auto SAML2 metadata configuration URL
+
+**METADATA_LOCAL_FILE_PATH** SAML2 metadata configuration file path
+
+**CREATE_USER** Determines if a new Django user should be created for new users.
 
 **NEW_USER_PROFILE** Default settings for newly created users
 
@@ -168,6 +186,22 @@ record is created. This method should accept ONE parameter of user dict.
 This method will be called before the user is logged in and after user
 attributes are returned by the SAML2 identity provider. This method should accept ONE parameter of user dict.
 
+**ASSERTION_URL** A URL to validate incoming SAML responses against. By default,
+django-saml2-auth will validate the SAML response's Service Provider address
+against the actual HTTP request's host and scheme. If this value is set, it
+will validate against ASSERTION_URL instead - perfect for when django running
+behind a reverse proxy.
+
+**ENTITY_ID** The optional entity ID string to be passed in the 'Issuer' element of authn request, if required by the IDP.
+
+**NAME_ID_FORMAT** Set to the string 'None', to exclude sending the 'Format' property of the 'NameIDPolicy' element in authn requests.
+Default value if not specified is 'urn:oasis:names:tc:SAML:2.0:nameid-format:transient'.
+
+**USE_JWT** Set this to the boolean True if you are using Django Rest Framework with JWT authentication
+
+**FRONTEND_URL** If USE_JWT is True, you should set the URL of where your frontend is located (will default to DEFAULT_NEXT_URL if you fail to do so). Once the client is authenticated through the SAML/SSO, your client is redirected to the FRONTEND_URL with the user id (uid) and JWT token (token) as query parameters.
+Example: 'https://myfrontendclient.com/?uid=<user id>&token=<jwt token>'
+With these params your client can now authenticate will server resources.
 
 Customize
 =========
@@ -190,10 +224,10 @@ To enable a logout page, add the following lines to urls.py, before any
 .. code-block:: python
 
     # The following line will replace the default user logout with the signout page (optional)
-    url(r'^accounts/logout/$', 'django_saml2_auth.views.signout'),
+    url(r'^accounts/logout/$', django_saml2_auth.views.signout),
 
     # The following line will replace the default admin user logout with the signout page (optional)
-    url(r'^admin/logout/$', 'django_saml2_auth.views.signout'),
+    url(r'^admin/logout/$', django_saml2_auth.views.signout),
 
 To override the built in signout page put a template named
 'django_saml2_auth/signout.html' in your project's template folder.
@@ -231,6 +265,14 @@ How to Contribute
 
 Release Log
 ===========
+
+2.2.0: ADFS SAML compatibility and fixed some issue for Django2.0
+
+2.1.2: Merged #35
+
+2.1.1: Added ASSERTION_URL in settings.
+
+2.1.0: Add DEFAULT_NEXT_URL. Issue #19.
 
 2.0.4: Fixed compatibility with Windows.
 
