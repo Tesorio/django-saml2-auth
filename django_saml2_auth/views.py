@@ -148,7 +148,11 @@ def _create_new_user(username, email, firstname, lastname):
 
 @csrf_exempt
 def acs(r):
-    saml_client = _get_saml_client(get_current_domain(r))
+    saml_metadata_conf_url = r.session.get('saml_metadata_conf_url')
+    if not saml_metadata_conf_url:
+        return HttpResponseRedirect(get_reverse('login'))
+
+    saml_client = _get_saml_client(get_current_domain(r), saml_metadata_conf_url)
     resp = r.POST.get('SAMLResponse', None)
     next_url = r.session.get('login_next_url', settings.SAML2_AUTH.get('DEFAULT_NEXT_URL', get_reverse('admin:index')))
 
@@ -169,11 +173,8 @@ def acs(r):
     user_first_name = user_identity[settings.SAML2_AUTH.get('ATTRIBUTES_MAP', {}).get('first_name', 'FirstName')][0]
     user_last_name = user_identity[settings.SAML2_AUTH.get('ATTRIBUTES_MAP', {}).get('last_name', 'LastName')][0]
 
-    target_user = None
-    is_new_user = False
-
     try:
-        target_user = User.objects.get(username=user_name)
+        target_user = User.objects.get(email=user_email)
         if settings.SAML2_AUTH.get('TRIGGER', {}).get('BEFORE_LOGIN', None):
             import_string(settings.SAML2_AUTH['TRIGGER']['BEFORE_LOGIN'])(user_identity)
     except User.DoesNotExist:
@@ -239,7 +240,7 @@ def signin(r):
 
     r.session['login_next_url'] = next_url
 
-    saml_client = _get_saml_client(get_current_domain(r))
+    saml_client = _get_saml_client(get_current_domain(r), r.session.get('saml_metadata_conf_url'))
     _, info = saml_client.prepare_for_authenticate()
 
     redirect_url = None
