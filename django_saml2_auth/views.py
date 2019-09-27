@@ -68,7 +68,13 @@ def get_reverse(objs):
 
 
 def _get_metadata():
-    if 'METADATA_LOCAL_FILE_PATH' in settings.SAML2_AUTH:
+    # BEGIN TESORIO CHANGES
+    if 'METADATA_INLINE' in settings.SAML2_AUTH:
+        return {
+            'inline': [settings.SAML2_AUTH['METADATA_INLINE']]
+        }
+    elif 'METADATA_LOCAL_FILE_PATH' in settings.SAML2_AUTH:
+    # END TESORIO CHANGES
         return {
             'local': [settings.SAML2_AUTH['METADATA_LOCAL_FILE_PATH']]
         }
