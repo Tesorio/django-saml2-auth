@@ -70,6 +70,10 @@ def get_reverse(objs):
 def _get_metadata():
     # BEGIN TESORIO CHANGES
     if 'METADATA_INLINE' in settings.SAML2_AUTH:
+        # Inline is another option provided by pySAML2 for providing a metadata
+        # The other two options are: file path and auto conf url
+        # There is a PR on django-saml2-auth, for adding this feature:
+        # https://github.com/fangli/django-saml2-auth/pull/67/files
         return {
             'inline': [settings.SAML2_AUTH['METADATA_INLINE']]
         }
