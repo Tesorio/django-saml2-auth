@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
-
+import logging
 from saml2 import (
     BINDING_HTTP_POST,
     BINDING_HTTP_REDIRECT,
@@ -27,6 +27,8 @@ from rest_auth.utils import jwt_encode
 
 # default User or custom User. Now both will work.
 User = get_user_model()
+
+logger = logging.getLogger(__name__)
 
 try:
     import urllib2 as _urllib
@@ -180,6 +182,7 @@ def acs(r):
     # saml_client = _get_saml_client(get_current_domain(r))
     saml_metadata_conf_url = r.session.get('saml_metadata_conf_url')
     if not saml_metadata_conf_url:
+        logger.warning("No saml_metadata_conf_url found")
         return HttpResponseRedirect(get_reverse('login'))
 
     saml_client = _get_saml_client(get_current_domain(r), saml_metadata_conf_url)
@@ -221,6 +224,7 @@ def acs(r):
         #     is_new_user = True
         # else:
         #     return HttpResponseRedirect(get_reverse([denied, 'denied', 'django_saml2_auth:denied']))
+        logger.warning("SSO user was not found: {}".format(user_email))
         return HttpResponseRedirect('/login/?sso_login_no_user=true')
 
     r.session.flush()
