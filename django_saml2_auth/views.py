@@ -182,7 +182,7 @@ def acs(r):
     # saml_client = _get_saml_client(get_current_domain(r))
     saml_metadata_conf_url = r.session.get('saml_metadata_conf_url')
     if not saml_metadata_conf_url:
-        logger.warning("No saml_metadata_conf_url found")
+        logger.warning("No saml_metadata_conf_url found", extra={"session": dict(r.session)})
         return HttpResponseRedirect(get_reverse('login'))
 
     saml_client = _get_saml_client(get_current_domain(r), saml_metadata_conf_url)
