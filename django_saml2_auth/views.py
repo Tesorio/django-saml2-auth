@@ -210,7 +210,7 @@ def acs(r):
     try:
         # BEGIN TESORIO CHANGES
         # target_user = User.objects.get(username=user_name)
-        target_user = User.objects.get(email=user_email)
+        target_user = User.objects.get(email__iexact=user_email)
         # END TESORIO CHANGES
         if settings.SAML2_AUTH.get('TRIGGER', {}).get('BEFORE_LOGIN', None):
             import_string(settings.SAML2_AUTH['TRIGGER']['BEFORE_LOGIN'])(user_identity)
