@@ -96,7 +96,7 @@ def _get_metadata():
 
 # BEGIN TESORIO CHANGES
 # def _get_saml_client(domain):
-def _get_saml_client(domain, metadata_conf_url):
+def _get_saml_client(domain, metadata_conf_url, metadata_conf_raw):
     #
     # Discussion:
     # https://github.com/Tesorio/django-saml2-auth/commit/1c6326e33135807aa513c18dd2f4eeff674d1a41
@@ -107,6 +107,7 @@ def _get_saml_client(domain, metadata_conf_url):
     # > this as a way to do that.
     #
     settings.SAML2_AUTH['METADATA_AUTO_CONF_URL'] = metadata_conf_url
+    settings.SAML2_AUTH['METADATA_INLINE'] = metadata_conf_raw
 # END TESORIO CHANGES
     acs_url = domain + get_reverse([acs, 'acs', 'django_saml2_auth:acs'])
     metadata = _get_metadata()
@@ -181,11 +182,12 @@ def acs(r):
     # BEGIN TESORIO CHANGES
     # saml_client = _get_saml_client(get_current_domain(r))
     saml_metadata_conf_url = r.session.get('saml_metadata_conf_url')
-    if not saml_metadata_conf_url:
-        logger.warning("No saml_metadata_conf_url found", extra={"session": dict(r.session)})
+    saml_metadata_conf_raw = r.session.get('saml_metadata_conf_raw')
+    if not saml_metadata_conf_url and not saml_metadata_conf_raw:
+        logger.warning("No saml_metadata_conf found", extra={"session": dict(r.session)})
         return HttpResponseRedirect(get_reverse('login'))
 
-    saml_client = _get_saml_client(get_current_domain(r), saml_metadata_conf_url)
+    saml_client = _get_saml_client(get_current_domain(r), saml_metadata_conf_url, saml_metadata_conf_raw)
     # END TESORIO CHANGES
     resp = r.POST.get('SAMLResponse', None)
     next_url = r.session.get('login_next_url', settings.SAML2_AUTH.get('DEFAULT_NEXT_URL', get_reverse('admin:index')))
@@ -285,7 +287,9 @@ def signin(r):
 
     # BEGIN TESORIO CHANGES
     # saml_client = _get_saml_client(get_current_domain(r))
-    saml_client = _get_saml_client(get_current_domain(r), r.session.get('saml_metadata_conf_url'))
+    saml_client = _get_saml_client(
+        get_current_domain(r), r.session.get('saml_metadata_conf_url'), r.session.get('saml_metadata_conf_raw')
+    )
     # END TESORIO CHANGES
     _, info = saml_client.prepare_for_authenticate()
 
