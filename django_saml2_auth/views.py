@@ -96,7 +96,7 @@ def _get_metadata():
 
 # BEGIN TESORIO CHANGES
 # def _get_saml_client(domain):
-def _get_saml_client(domain, metadata_conf_url, metadata_conf_raw):
+def _get_saml_client(domain, metadata_conf_url, metadata_conf_raw = None):
     #
     # Discussion:
     # https://github.com/Tesorio/django-saml2-auth/commit/1c6326e33135807aa513c18dd2f4eeff674d1a41
@@ -106,11 +106,24 @@ def _get_saml_client(domain, metadata_conf_url, metadata_conf_raw):
     # > application. We wanted to provide SAML for our customers, so we used
     # > this as a way to do that.
     #
-    settings.SAML2_AUTH['METADATA_AUTO_CONF_URL'] = metadata_conf_url
-    settings.SAML2_AUTH['METADATA_INLINE'] = metadata_conf_raw
+    # We are also stopping using the _get_metadata function altogether.
+    # Since our support is for SAML 2.0 and not a specific company, changing
+    # the settings object everytime could lead to issues due to concurrency.
+    # For now, we won't be supporting the LOCAL_FILE_PATH setting.
+    # Related:
+    # https://github.com/Tesorio/django-saml2-auth/pull/11#pullrequestreview-704613069
+    # We will give priority to the raw XML file if it exist
+    metadata = (
+        {"inline": [metadata_conf_raw]}
+        if metadata_conf_raw is not None
+        else {
+            "remote": [
+                {"url": metadata_conf_url},
+            ]
+        }
+    )
 # END TESORIO CHANGES
     acs_url = domain + get_reverse([acs, 'acs', 'django_saml2_auth:acs'])
-    metadata = _get_metadata()
 
     saml_settings = {
         'metadata': metadata,
@@ -184,7 +197,7 @@ def acs(r):
     saml_metadata_conf_url = r.session.get('saml_metadata_conf_url')
     saml_metadata_conf_raw = r.session.get('saml_metadata_conf_raw')
     if not saml_metadata_conf_url and not saml_metadata_conf_raw:
-        logger.warning("No saml_metadata_conf found", extra={"session": dict(r.session)})
+        logger.info("No saml_metadata_conf found", extra={"session": dict(r.session)})
         return HttpResponseRedirect(get_reverse('login'))
 
     saml_client = _get_saml_client(get_current_domain(r), saml_metadata_conf_url, saml_metadata_conf_raw)
