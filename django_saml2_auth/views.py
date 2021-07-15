@@ -113,6 +113,7 @@ def _get_saml_client(domain, metadata_conf_url, metadata_conf_raw=None):
     # Related:
     # https://github.com/Tesorio/django-saml2-auth/pull/11#pullrequestreview-704613069
     # We will give priority to the raw XML file if it exist
+    # settings.SAML2_AUTH['METADATA_AUTO_CONF_URL'] = metadata_conf_url
     if metadata_conf_raw:
         metadata = {'inline': [metadata_conf_raw]}
     else:
@@ -121,6 +122,7 @@ def _get_saml_client(domain, metadata_conf_url, metadata_conf_raw=None):
                 {'url': metadata_conf_url},
             ]
         }
+    # metadata = _get_metadata()
 # END TESORIO CHANGES
     acs_url = domain + get_reverse([acs, 'acs', 'django_saml2_auth:acs'])
 
