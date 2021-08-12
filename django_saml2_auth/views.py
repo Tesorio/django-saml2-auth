@@ -96,7 +96,7 @@ def _get_metadata():
 
 # BEGIN TESORIO CHANGES
 # def _get_saml_client(domain):
-def _get_saml_client(domain, metadata_conf_url):
+def _get_saml_client(domain, metadata_conf_url, metadata_conf_raw=None):
     #
     # Discussion:
     # https://github.com/Tesorio/django-saml2-auth/commit/1c6326e33135807aa513c18dd2f4eeff674d1a41
@@ -106,10 +106,25 @@ def _get_saml_client(domain, metadata_conf_url):
     # > application. We wanted to provide SAML for our customers, so we used
     # > this as a way to do that.
     #
-    settings.SAML2_AUTH['METADATA_AUTO_CONF_URL'] = metadata_conf_url
+    # We are also stopping using the _get_metadata function altogether.
+    # Since our support is for SAML 2.0 and not a specific company, changing
+    # the settings object everytime could lead to issues due to concurrency.
+    # For now, we won't be supporting the LOCAL_FILE_PATH setting.
+    # Related:
+    # https://github.com/Tesorio/django-saml2-auth/pull/11#pullrequestreview-704613069
+    # We will give priority to the raw XML file if it exist
+    # settings.SAML2_AUTH['METADATA_AUTO_CONF_URL'] = metadata_conf_url
+    if metadata_conf_raw:
+        metadata = {'inline': [metadata_conf_raw]}
+    else:
+        metadata = {
+            'remote': [
+                {'url': metadata_conf_url},
+            ]
+        }
+    # metadata = _get_metadata()
 # END TESORIO CHANGES
     acs_url = domain + get_reverse([acs, 'acs', 'django_saml2_auth:acs'])
-    metadata = _get_metadata()
 
     saml_settings = {
         'metadata': metadata,
@@ -181,11 +196,12 @@ def acs(r):
     # BEGIN TESORIO CHANGES
     # saml_client = _get_saml_client(get_current_domain(r))
     saml_metadata_conf_url = r.session.get('saml_metadata_conf_url')
-    if not saml_metadata_conf_url:
-        logger.warning("No saml_metadata_conf_url found", extra={"session": dict(r.session)})
+    saml_metadata_conf_raw = r.session.get('saml_metadata_conf_raw')
+    if not saml_metadata_conf_url and not saml_metadata_conf_raw:
+        logger.info("No saml_metadata_conf found", extra={"session": dict(r.session)})
         return HttpResponseRedirect(get_reverse('login'))
 
-    saml_client = _get_saml_client(get_current_domain(r), saml_metadata_conf_url)
+    saml_client = _get_saml_client(get_current_domain(r), saml_metadata_conf_url, saml_metadata_conf_raw)
     # END TESORIO CHANGES
     resp = r.POST.get('SAMLResponse', None)
     next_url = r.session.get('login_next_url', settings.SAML2_AUTH.get('DEFAULT_NEXT_URL', get_reverse('admin:index')))
@@ -285,7 +301,9 @@ def signin(r):
 
     # BEGIN TESORIO CHANGES
     # saml_client = _get_saml_client(get_current_domain(r))
-    saml_client = _get_saml_client(get_current_domain(r), r.session.get('saml_metadata_conf_url'))
+    saml_client = _get_saml_client(
+        get_current_domain(r), r.session.get('saml_metadata_conf_url'), r.session.get('saml_metadata_conf_raw')
+    )
     # END TESORIO CHANGES
     _, info = saml_client.prepare_for_authenticate()
 
