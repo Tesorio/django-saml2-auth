@@ -116,6 +116,8 @@ def _get_saml_client(domain, metadata_conf_url, metadata_conf_raw=None):
     # settings.SAML2_AUTH['METADATA_AUTO_CONF_URL'] = metadata_conf_url
     if metadata_conf_raw:
         metadata = {'inline': [metadata_conf_raw]}
+    elif 'METADATA_INLINE' in settings.SAML2_AUTH:
+        metadata = {'inline': [settings.SAML2_AUTH['METADATA_INLINE']]}
     else:
         metadata = {
             'remote': [
