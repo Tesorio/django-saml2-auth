@@ -201,7 +201,7 @@ def acs(r):
     saml_metadata_conf_raw = r.session.get('saml_metadata_conf_raw')
     if not saml_metadata_conf_url and not saml_metadata_conf_raw:
         logger.info("No saml_metadata_conf found", extra={"session": dict(r.session)})
-        return HttpResponseRedirect(get_reverse('login'))
+        return HttpResponseRedirect(get_reverse('sso_login'))
 
     saml_client = _get_saml_client(get_current_domain(r), saml_metadata_conf_url, saml_metadata_conf_raw)
     # END TESORIO CHANGES
