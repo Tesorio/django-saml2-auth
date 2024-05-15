@@ -266,6 +266,8 @@ How to Contribute
 Release Log
 ===========
 
+3.0.0: Add support for Django 4.2 and Python 3.12 (BREAKING CHANGES)
+
 2.3.0: Multiple updates from Tesorio across the years
 
 * Change acs redirect to sso login page
