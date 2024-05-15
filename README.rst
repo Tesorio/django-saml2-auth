@@ -266,6 +266,30 @@ How to Contribute
 Release Log
 ===========
 
+2.3.0: Multiple updates from Tesorio across the years
+
+* Change acs redirect to sso login page
+* [MOVER-1714] fix the missing conditional of metadata_inline in the env var (#12)
+* [MOVER-1714] Adds support for dealing with raw metadata XML files (#11)
+* Merge pull request #10 from Tesorio/fix/iexact-email
+* Supporting for case-insensitive lookup of email for SSO login
+* Merge pull request #9 from Tesorio/more-logging
+* Added more logging with the warning
+* Merge pull request #8 from Tesorio/logging
+* Added some logging to SAML login
+* Add documentation about inline metadata (#7)
+* Merge pull request #6 from Tesorio/feature/allow_inline_metadata
+* Allow configuration to use Inline metadata.
+* Rebase django-saml2-auth to 2.2.1 (#4)
+* Merge pull request #3 from Tesorio/fix-acs-redirect
+* If cannot get saml_metadata_conf_url from session, redirect to login
+* Merge pull request #2 from Tesorio/multi_saml
+* Grab metadata URL from the session
+* Merge pull request #1 from Tesorio/fork_changes
+* Email is the canonical identifier provided by Okta. Don't create a new user if one doesn't already exist
+
+--- End of the Tesorio release logs
+
 2.2.0: ADFS SAML compatibility and fixed some issue for Django2.0
 
 2.1.2: Merged #35
