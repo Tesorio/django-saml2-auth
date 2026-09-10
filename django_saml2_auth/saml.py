@@ -84,7 +84,8 @@ def validate_metadata_url(url: str) -> bool:
     return True
 
 
-def get_metadata(user_id: Optional[str] = None) -> Mapping[str, Any]:
+def get_metadata(user_id: Optional[str] = None,
+                 request: Optional[HttpRequest] = None) -> Mapping[str, Any]:
     """Returns metadata information, either by running the GET_METADATA_AUTO_CONF_URLS hook function
     if available, or by checking and returning a local file path or the METADATA_AUTO_CONF_URL. URLs
     are always validated and invalid URLs will be either filtered or raise a SAMLAuthError
@@ -94,6 +95,10 @@ def get_metadata(user_id: Optional[str] = None) -> Mapping[str, Any]:
         user_id (str, optional): If passed, it will be further processed by the
             GET_METADATA_AUTO_CONF_URLS trigger, which will return the metadata URL corresponding to
             the given user identifier, either email or username. Defaults to None.
+        request (HttpRequest, optional): If passed, it will be given to the
+            GET_METADATA_FROM_REQUEST trigger, which returns the metadata for a tenant that
+            is identified by the request itself (for example from the session). Defaults to
+            None.
 
     Raises:
         SAMLAuthError: No metadata URL associated with the given user identifier.
@@ -103,6 +108,21 @@ def get_metadata(user_id: Optional[str] = None) -> Mapping[str, Any]:
         Mapping[str, Any]: Returns a SAML metadata object as dictionary
     """
     saml2_auth_settings = settings.SAML2_AUTH
+
+    # Tenant is selected by the request, not by the user identifier, because the IdP is known
+    # before the user is (e.g. the SP-initiated flow stores it in the session).
+    get_metadata_from_request = dictor(saml2_auth_settings, "TRIGGER.GET_METADATA_FROM_REQUEST")
+    if get_metadata_from_request and request is not None:
+        metadata = run_hook(get_metadata_from_request, request)  # type: ignore
+        if metadata:
+            return metadata
+        raise SAMLAuthError("No metadata associated with the given request.", extra={
+            "exc_type": ValueError,
+            "error_code": NO_METADATA_URL_ASSOCIATED,
+            "reason": "There was an error processing your request.",
+            "status_code": 500
+        })
+
     get_metadata_trigger = dictor(saml2_auth_settings, "TRIGGER.GET_METADATA_AUTO_CONF_URLS")
     if get_metadata_trigger:
         metadata_urls = run_hook(get_metadata_trigger, user_id)  # type: ignore
@@ -119,6 +139,10 @@ def get_metadata(user_id: Optional[str] = None) -> Mapping[str, Any]:
                                     "reason": "There was an error processing your request.",
                                     "status_code": 500
                                 })
+
+    metadata_inline = dictor(saml2_auth_settings, "METADATA_INLINE")
+    if metadata_inline:
+        return {"inline": [metadata_inline]}
 
     metadata_local_file_path = dictor(saml2_auth_settings, "METADATA_LOCAL_FILE_PATH")
     if metadata_local_file_path:
@@ -139,7 +163,8 @@ def get_metadata(user_id: Optional[str] = None) -> Mapping[str, Any]:
 def get_saml_client(domain: str,
                     acs: Callable[..., HttpResponse],
                     user_id: str = None,
-                    saml_response: Optional[str] = None) -> Optional[Saml2Client]:
+                    saml_response: Optional[str] = None,
+                    request: Optional[HttpRequest] = None) -> Optional[Saml2Client]:
     """Create a new Saml2Config object with the given config and return an initialized Saml2Client
     using the config object. The settings are read from django settings key: SAML2_AUTH.
 
@@ -151,6 +176,8 @@ def get_saml_client(domain: str,
             to the given user identifier, either email or username. Defaults to None.
         user_id (str or None): User identifier: username or email. Defaults to None.
         saml_response (str or None): decoded XML SAML response.
+        request (HttpRequest or None): If passed, it is given to the GET_METADATA_FROM_REQUEST
+            trigger. Defaults to None.
 
     Raises:
         SAMLAuthError: Re-raise any exception raised by Saml2Config or Saml2Client
@@ -166,11 +193,9 @@ def get_saml_client(domain: str,
     if get_user_id_from_saml_response and saml_response:
         user_id = run_hook(get_user_id_from_saml_response, saml_response, user_id)  # type: ignore
 
-    metadata = get_metadata(user_id)
-    if (metadata and (
-            ("local" in metadata and not metadata["local"]) or
-            ("remote" in metadata and not metadata["remote"])
-    )):
+    metadata = get_metadata(user_id, request=request)
+    if metadata and any(key in metadata and not metadata[key]
+                        for key in ("local", "remote", "inline")):
         raise SAMLAuthError("Metadata URL/file is missing.", extra={
             "exc_type": NoReverseMatch,
             "error_code": NO_METADATA_URL_OR_FILE,
@@ -268,7 +293,8 @@ def decode_saml_response(
         saml_response = base64.b64decode(response).decode('UTF-8')
     except Exception:
         saml_response = None
-    saml_client = get_saml_client(get_assertion_url(request), acs, saml_response=saml_response)
+    saml_client = get_saml_client(
+        get_assertion_url(request), acs, saml_response=saml_response, request=request)
     if not saml_client:
         raise SAMLAuthError("There was an error creating the SAML client.", extra={
             "exc_type": ValueError,

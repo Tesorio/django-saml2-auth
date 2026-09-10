@@ -2,10 +2,12 @@
 Tests for saml.py
 """
 
-from typing import Optional, List, Mapping
+from copy import deepcopy
+from typing import Any, Optional, List, Mapping
 
 import pytest
 import responses
+from django.conf import settings
 from django.http import HttpRequest
 from django.test.client import RequestFactory
 from django.urls import NoReverseMatch
@@ -15,11 +17,13 @@ from django_saml2_auth.saml import (decode_saml_response,
                                     get_default_next_url, get_metadata,
                                     get_saml_client, validate_metadata_url)
 from django_saml2_auth.views import acs
-from pytest_django.fixtures import SettingsWrapper
+# pytest-django renamed SettingsWrapper to Settings in 4.6; alias to keep the diff small.
+from pytest_django.fixtures import Settings as SettingsWrapper
 from saml2.client import Saml2Client
 from saml2.response import AuthnResponse
 
 GET_METADATA_AUTO_CONF_URLS = "django_saml2_auth.tests.test_saml.get_metadata_auto_conf_urls"
+GET_METADATA_FROM_REQUEST = "django_saml2_auth.tests.test_saml.get_metadata_from_request"
 METADATA_URL1 = "https://testserver1.com/saml/sso/metadata"
 METADATA_URL2 = "https://testserver2.com/saml/sso/metadata"
 # Ref: https://en.wikipedia.org/wiki/SAML_metadata#Entity_metadata
@@ -79,6 +83,41 @@ METADATA2 = b"""
     <md:EmailAddress>mailto:technical-support@example.info</md:EmailAddress>
     </md:ContactPerson>
 </md:EntityDescriptor>"""
+
+
+def with_request_trigger() -> Any:
+    """Return a copy of SAML2_AUTH with the GET_METADATA_FROM_REQUEST trigger enabled.
+
+    The settings fixture only restores top-level attributes, so the nested TRIGGER dict must
+    never be mutated in place.
+
+    Returns:
+        Any: A deep copy of the SAML2_AUTH settings dict
+    """
+    saml2_auth_settings = deepcopy(settings.SAML2_AUTH)
+    saml2_auth_settings["TRIGGER"]["GET_METADATA_FROM_REQUEST"] = GET_METADATA_FROM_REQUEST
+    return saml2_auth_settings
+
+
+def get_metadata_from_request(request: HttpRequest) -> Optional[Mapping[str, Any]]:
+    """Tenant metadata resolved from the request instead of the user identifier.
+
+    Args:
+        request (HttpRequest): Django request object
+
+    Returns:
+        Optional[Mapping[str, Any]]: A pysaml2 metadata mapping, or None when the request
+            carries no tenant.
+    """
+    metadata_url = request.session.get("saml_metadata_conf_url")
+    if metadata_url:
+        return {"remote": [{"url": metadata_url}]}
+
+    metadata_raw = request.session.get("saml_metadata_conf_raw")
+    if metadata_raw:
+        return {"inline": [metadata_raw]}
+
+    return None
 
 
 def get_metadata_auto_conf_urls(user_id: Optional[str] = None) -> List[Optional[Mapping[str, str]]]:
@@ -280,6 +319,83 @@ def test_get_metadata_success_with_local_file(settings: SettingsWrapper):
     """
     settings.SAML2_AUTH["TRIGGER"]["GET_METADATA_AUTO_CONF_URLS"] = None
     settings.SAML2_AUTH["METADATA_LOCAL_FILE_PATH"] = "/absolute/path/to/metadata.xml"
+
+    result = get_metadata()
+    assert result == {"local": ["/absolute/path/to/metadata.xml"]}
+
+
+def test_get_metadata_success_with_inline_metadata(settings: SettingsWrapper):
+    """Test get_metadata function to verify it returns inline metadata XML.
+
+    Args:
+        settings (SettingsWrapper): Fixture for django settings
+    """
+    saml2_auth_settings = deepcopy(settings.SAML2_AUTH)
+    saml2_auth_settings["TRIGGER"]["GET_METADATA_AUTO_CONF_URLS"] = None
+    saml2_auth_settings["METADATA_INLINE"] = METADATA1.decode()
+    settings.SAML2_AUTH = saml2_auth_settings
+
+    result = get_metadata()
+    assert result == {"inline": [METADATA1.decode()]}
+
+
+def test_get_metadata_success_with_request_url(settings: SettingsWrapper):
+    """Test get_metadata function to verify the request trigger resolves a remote URL.
+
+    Args:
+        settings (SettingsWrapper): Fixture for django settings
+    """
+    settings.SAML2_AUTH = with_request_trigger()
+
+    request = RequestFactory().get("/")
+    request.session = {"saml_metadata_conf_url": METADATA_URL1}
+
+    result = get_metadata(request=request)
+    assert result == {"remote": [{"url": METADATA_URL1}]}
+
+
+def test_get_metadata_success_with_request_inline(settings: SettingsWrapper):
+    """Test get_metadata function to verify the request trigger resolves inline metadata.
+
+    Args:
+        settings (SettingsWrapper): Fixture for django settings
+    """
+    settings.SAML2_AUTH = with_request_trigger()
+
+    request = RequestFactory().get("/")
+    request.session = {"saml_metadata_conf_raw": METADATA1.decode()}
+
+    result = get_metadata(request=request)
+    assert result == {"inline": [METADATA1.decode()]}
+
+
+def test_get_metadata_failure_with_empty_request(settings: SettingsWrapper):
+    """Test get_metadata function to verify it raises when the request carries no tenant.
+
+    Args:
+        settings (SettingsWrapper): Fixture for django settings
+    """
+    settings.SAML2_AUTH = with_request_trigger()
+
+    request = RequestFactory().get("/")
+    request.session = {}
+
+    with pytest.raises(SAMLAuthError) as exc_info:
+        get_metadata(request=request)
+    assert str(exc_info.value) == "No metadata associated with the given request."
+
+
+def test_get_metadata_request_trigger_ignored_without_request(settings: SettingsWrapper):
+    """Test get_metadata function to verify the request trigger is skipped when no request
+    is passed, so the user-identifier path still works.
+
+    Args:
+        settings (SettingsWrapper): Fixture for django settings
+    """
+    saml2_auth_settings = with_request_trigger()
+    saml2_auth_settings["TRIGGER"]["GET_METADATA_AUTO_CONF_URLS"] = None
+    saml2_auth_settings["METADATA_LOCAL_FILE_PATH"] = "/absolute/path/to/metadata.xml"
+    settings.SAML2_AUTH = saml2_auth_settings
 
     result = get_metadata()
     assert result == {"local": ["/absolute/path/to/metadata.xml"]}

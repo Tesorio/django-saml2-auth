@@ -206,7 +206,7 @@ def sp_initiated_login(request: HttpRequest) -> HttpResponseRedirect:
                     "reason": "The token is invalid.",
                     "status_code": 403
                 })
-            saml_client = get_saml_client(get_assertion_url(request), acs, user_id)
+            saml_client = get_saml_client(get_assertion_url(request), acs, user_id, request=request)
             jwt_token = create_custom_or_default_jwt(user_id)
             _, info = saml_client.prepare_for_authenticate(  # type: ignore
                 sign=False, relay_state=jwt_token)
@@ -268,7 +268,7 @@ def signin(request: HttpRequest) -> HttpResponseRedirect:
 
     request.session["login_next_url"] = next_url
 
-    saml_client = get_saml_client(get_assertion_url(request), acs)
+    saml_client = get_saml_client(get_assertion_url(request), acs, request=request)
     _, info = saml_client.prepare_for_authenticate(relay_state=next_url)  # type: ignore
 
     redirect_url = dict(info["headers"]).get("Location", "")
