@@ -523,3 +523,45 @@ def test_decode_jwt_token_failure():
 
     assert str(exc_info.value) == "Cannot decode JWT token."
     assert isinstance(exc_info.value.extra["exc"], PyJWTError)
+
+
+@pytest.mark.django_db
+def test_get_user_uses_user_lookup_field(settings: SettingsWrapper):
+    """Test get_user finds a user by USER_LOOKUP_FIELD when it is not the USERNAME_FIELD.
+
+    Args:
+        settings (SettingsWrapper): Fixture for django settings
+    """
+    settings.SAML2_AUTH = {"USER_LOOKUP_FIELD": "email"}
+    created = User.objects.create_user("local_handle", "Sso.User@Example.com")
+
+    assert get_user({"username": "sso.user@example.com"}) == created
+
+
+@pytest.mark.django_db
+def test_get_user_lookup_field_honours_login_case_sensitive(settings: SettingsWrapper):
+    """Test get_user matches USER_LOOKUP_FIELD case-sensitively when asked to.
+
+    Args:
+        settings (SettingsWrapper): Fixture for django settings
+    """
+    settings.SAML2_AUTH = {"USER_LOOKUP_FIELD": "email", "LOGIN_CASE_SENSITIVE": True}
+    User.objects.create_user("local_handle", "Sso.User@Example.com")
+
+    with pytest.raises(User.DoesNotExist):
+        get_user({"username": "sso.user@example.com"})
+
+
+@pytest.mark.django_db
+def test_get_user_defaults_to_the_username_field(settings: SettingsWrapper):
+    """Test get_user still queries USERNAME_FIELD when USER_LOOKUP_FIELD is unset.
+
+    Args:
+        settings (SettingsWrapper): Fixture for django settings
+    """
+    settings.SAML2_AUTH = {}
+    created = User.objects.create_user("local_handle", "sso.user@example.com")
+
+    assert get_user({"username": "local_handle"}) == created
+    with pytest.raises(User.DoesNotExist):
+        get_user({"username": "sso.user@example.com"})

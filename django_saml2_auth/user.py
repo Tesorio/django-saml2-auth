@@ -184,6 +184,9 @@ def get_user_id(user: Union[str, Dict[str, Any]]) -> Optional[str]:
 def get_user(user: Union[str, Dict[str, str]]) -> User:
     """Get user from database given a cleaned user info object or a user_id
 
+    The field queried is USER_LOOKUP_FIELD if set, otherwise the model's USERNAME_FIELD, and the
+    match is case-insensitive unless LOGIN_CASE_SENSITIVE is set.
+
     Args:
         user (Union[str, Dict[str, str]]): Either a user_id (as str) or a cleaned user info object
 
@@ -203,12 +206,14 @@ def get_user(user: Union[str, Dict[str, str]]) -> User:
 
     user_id = get_user_id(user)
 
+    # Which model field holds the identity the IdP asserts. It is not always USERNAME_FIELD: an
+    # IdP normally asserts an email address while the local username is something unrelated.
+    lookup_field = dictor(
+        saml2_auth_settings, "USER_LOOKUP_FIELD") or user_model.USERNAME_FIELD
+
     # Should email be case-sensitive or not. Default is False (case-insensitive).
     login_case_sensitive = dictor(saml2_auth_settings, "LOGIN_CASE_SENSITIVE", False)
-    id_field = (
-        user_model.USERNAME_FIELD
-        if login_case_sensitive
-        else f"{user_model.USERNAME_FIELD}__iexact")
+    id_field = lookup_field if login_case_sensitive else f"{lookup_field}__iexact"
     return user_model.objects.get(**{id_field: user_id})
 
 
