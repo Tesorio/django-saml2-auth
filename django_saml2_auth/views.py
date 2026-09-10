@@ -15,11 +15,8 @@ from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
 from django.template import TemplateDoesNotExist
 
-try:
-    from django.utils.http import \
-        url_has_allowed_host_and_scheme as is_safe_url
-except ImportError:
-    from django.utils.http import is_safe_url
+from django.utils.http import \
+    url_has_allowed_host_and_scheme as is_safe_url
 
 from django.views.decorators.csrf import csrf_exempt
 from django_saml2_auth.errors import (INACTIVE_USER, INVALID_NEXT_URL,
