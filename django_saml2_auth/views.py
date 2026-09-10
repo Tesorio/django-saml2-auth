@@ -119,7 +119,9 @@ def acs(request: HttpRequest):
 
     before_login_trigger = dictor(saml2_auth_settings, "TRIGGER.BEFORE_LOGIN")
     if before_login_trigger:
-        run_hook(before_login_trigger, user)  # type: ignore
+        # The hook gets the identity exactly as the IdP asserted it, keyed by SAML attribute
+        # name, so it can read attributes the library does not map into the cleaned user dict.
+        run_hook(before_login_trigger, user["user_identity"])  # type: ignore
 
     request.session.flush()
 
