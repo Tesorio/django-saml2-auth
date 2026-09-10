@@ -164,7 +164,7 @@ def exception_handler(
                       context=context,
                       status=status)
 
-    @ wraps(function)
+    @wraps(function)
     def wrapper(request: HttpRequest) -> HttpResponse:
         """Decorated function is wrapped and called here
 

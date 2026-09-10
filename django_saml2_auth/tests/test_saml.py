@@ -85,16 +85,16 @@ METADATA2 = b"""
 </md:EntityDescriptor>"""
 
 
-def with_request_trigger() -> Any:
+def with_request_trigger() -> dict[str, Any]:
     """Return a copy of SAML2_AUTH with the GET_METADATA_FROM_REQUEST trigger enabled.
 
     The settings fixture only restores top-level attributes, so the nested TRIGGER dict must
     never be mutated in place.
 
     Returns:
-        Any: A deep copy of the SAML2_AUTH settings dict
+        dict[str, Any]: A deep copy of the SAML2_AUTH settings dict
     """
-    saml2_auth_settings = deepcopy(settings.SAML2_AUTH)
+    saml2_auth_settings: dict[str, Any] = deepcopy(settings.SAML2_AUTH)
     saml2_auth_settings["TRIGGER"]["GET_METADATA_FROM_REQUEST"] = GET_METADATA_FROM_REQUEST
     return saml2_auth_settings
 
@@ -348,7 +348,7 @@ def test_get_metadata_success_with_request_url(settings: SettingsWrapper):
     settings.SAML2_AUTH = with_request_trigger()
 
     request = RequestFactory().get("/")
-    request.session = {"saml_metadata_conf_url": METADATA_URL1}
+    request.session = {"saml_metadata_conf_url": METADATA_URL1}  # type: ignore[assignment]
 
     result = get_metadata(request=request)
     assert result == {"remote": [{"url": METADATA_URL1}]}
@@ -363,7 +363,7 @@ def test_get_metadata_success_with_request_inline(settings: SettingsWrapper):
     settings.SAML2_AUTH = with_request_trigger()
 
     request = RequestFactory().get("/")
-    request.session = {"saml_metadata_conf_raw": METADATA1.decode()}
+    request.session = {"saml_metadata_conf_raw": METADATA1.decode()}  # type: ignore[assignment]
 
     result = get_metadata(request=request)
     assert result == {"inline": [METADATA1.decode()]}
@@ -378,7 +378,7 @@ def test_get_metadata_failure_with_empty_request(settings: SettingsWrapper):
     settings.SAML2_AUTH = with_request_trigger()
 
     request = RequestFactory().get("/")
-    request.session = {}
+    request.session = {}  # type: ignore[assignment]
 
     with pytest.raises(SAMLAuthError) as exc_info:
         get_metadata(request=request)
