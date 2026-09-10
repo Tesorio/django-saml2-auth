@@ -12,7 +12,8 @@ from django_saml2_auth.user import (create_custom_or_default_jwt, create_new_use
                                     decode_custom_or_default_jwt, get_or_create_user,
                                     get_user, get_user_id)
 from jwt.exceptions import PyJWTError
-from pytest_django.fixtures import SettingsWrapper
+# pytest-django renamed SettingsWrapper to Settings in 4.6; alias to keep the diff small.
+from pytest_django.fixtures import Settings as SettingsWrapper
 
 
 private_key = """-----BEGIN RSA PRIVATE KEY-----

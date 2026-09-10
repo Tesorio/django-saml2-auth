@@ -17,15 +17,15 @@ with open(path.join(here, "README.md"), encoding="utf-8") as f:
 requirements = [r.rstrip() for r in open("requirements.txt").readlines()]
 
 setup(
-    name="grafana_django_saml2_auth",
+    name="django_saml2_auth",
 
-    version="3.9.0",
+    version="4.0.0",
 
     description="Django SAML2 Authentication Made Easy.",
     long_description=long_description,
     long_description_content_type="text/markdown",
 
-    url="https://github.com/grafana/django-saml2-auth",
+    url="https://github.com/Tesorio/django-saml2-auth",
 
     author="Fang Li",
     author_email="surivlee+djsaml2auth@gmail.com",
