@@ -1,1 +1,3 @@
-__version__ = '1.0.1b1'
+"""
+django-saml2-auth is a Django app that provides a SAML2 authentication backend.
+"""
