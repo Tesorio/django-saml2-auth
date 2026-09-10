@@ -5,8 +5,14 @@ Tests for utils.py
 import pytest
 from django.http import HttpRequest, HttpResponse
 from django.urls import NoReverseMatch
+from django_saml2_auth.errors import (GENERAL_EXCEPTION, INACTIVE_USER,
+                                      NO_SAML_RESPONSE_FROM_CLIENT,
+                                      SHOULD_NOT_CREATE_USER)
 from django_saml2_auth.exceptions import SAMLAuthError
-from django_saml2_auth.utils import exception_handler, get_reverse, run_hook, is_jwt_well_formed
+from django_saml2_auth.utils import (exception_handler, get_error_redirect_url, get_reverse,
+                                     is_jwt_well_formed, run_hook)
+# pytest-django renamed SettingsWrapper to Settings in 4.6; alias to keep the diff small.
+from pytest_django.fixtures import Settings as SettingsWrapper  # noqa: F401
 
 
 def divide(a: int, b: int = 1) -> int:
@@ -137,3 +143,70 @@ def test_jwt_well_formed():
     assert res is True
     res = is_jwt_well_formed('/')  # False
     assert res is False
+
+
+def test_get_error_redirect_url_no_mapping_for_error_code(settings: "SettingsWrapper"):
+    """Test get_error_redirect_url with an error code that is never redirected."""
+    settings.SAML2_AUTH["ERROR_REDIRECTS"] = {"NO_METADATA": "/login/sso/"}
+    exc = SAMLAuthError("Boom", extra={"error_code": GENERAL_EXCEPTION})
+    assert get_error_redirect_url(exc) is None
+
+
+def test_get_error_redirect_url_unconfigured_key_keeps_error_page(settings: "SettingsWrapper"):
+    """Test get_error_redirect_url leaves the error page in place when the key is unset."""
+    settings.SAML2_AUTH["ERROR_REDIRECTS"] = {}
+    exc = SAMLAuthError("Inactive", extra={"error_code": INACTIVE_USER})
+    assert get_error_redirect_url(exc) is None
+
+
+def test_get_error_redirect_url_uses_path_as_given(settings: "SettingsWrapper"):
+    """Test get_error_redirect_url passes a path or absolute URL through untouched."""
+    settings.SAML2_AUTH["ERROR_REDIRECTS"] = {
+        "USER_NOT_FOUND": "/login/?sso_login_no_user=true"}
+    exc = SAMLAuthError("Cannot create user.", extra={"error_code": SHOULD_NOT_CREATE_USER})
+    assert get_error_redirect_url(exc) == "/login/?sso_login_no_user=true"
+
+
+def test_get_error_redirect_url_reverses_a_url_name(settings: "SettingsWrapper"):
+    """Test get_error_redirect_url reverses a value that is a URL pattern name."""
+    settings.SAML2_AUTH["ERROR_REDIRECTS"] = {"NO_SAML_RESPONSE": "denied"}
+    exc = SAMLAuthError("No response", extra={"error_code": NO_SAML_RESPONSE_FROM_CLIENT})
+    assert get_error_redirect_url(exc) == "/denied/"
+
+
+def test_get_error_redirect_url_unreversible_name_keeps_error_page(settings: "SettingsWrapper"):
+    """Test get_error_redirect_url falls back to the error page for an unknown URL name."""
+    settings.SAML2_AUTH["ERROR_REDIRECTS"] = {"NO_SAML_RESPONSE": "nonexistent_view"}
+    exc = SAMLAuthError("No response", extra={"error_code": NO_SAML_RESPONSE_FROM_CLIENT})
+    assert get_error_redirect_url(exc) is None
+
+
+def test_get_error_redirect_url_ignores_a_plain_exception():
+    """Test get_error_redirect_url ignores anything that is not a SAMLAuthError."""
+    assert get_error_redirect_url(RuntimeError("Boom")) is None
+
+
+def redirect_me(_: HttpRequest) -> HttpResponse:
+    """Simple view function raising a redirectable SAMLAuthError.
+
+    Args:
+        _ (HttpRequest): Incoming HTTP request (not used)
+
+    Raises:
+        SAMLAuthError: The target user is inactive.
+    """
+    raise SAMLAuthError("The target user is inactive.", extra={
+        "exc_type": Exception,
+        "error_code": INACTIVE_USER,
+        "reason": "User is inactive.",
+        "status_code": 500
+    })
+
+
+def test_exception_handler_redirects_a_recoverable_failure(settings: "SettingsWrapper"):
+    """Test exception_handler redirects instead of rendering the error page when configured."""
+    settings.SAML2_AUTH["ERROR_REDIRECTS"] = {"INACTIVE_USER": "denied"}
+    decorated_redirect_me = exception_handler(redirect_me)
+    result = decorated_redirect_me(HttpRequest())
+    assert result.status_code == 302
+    assert result["Location"] == "/denied/"

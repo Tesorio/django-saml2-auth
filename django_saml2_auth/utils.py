@@ -9,14 +9,30 @@ import logging
 from typing import (Any, Callable, Dict, Iterable, Mapping, Optional, Tuple,
                     Union)
 
+from dictor import dictor  # type: ignore
+from django.conf import settings
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import NoReverseMatch, reverse
 from django.utils.module_loading import import_string
 from django_saml2_auth.errors import (EMPTY_FUNCTION_PATH, GENERAL_EXCEPTION,
-                                      IMPORT_ERROR, NO_REVERSE_MATCH,
-                                      PATH_ERROR)
+                                      IMPORT_ERROR, INACTIVE_USER,
+                                      NO_METADATA_URL_ASSOCIATED,
+                                      NO_REVERSE_MATCH,
+                                      NO_SAML_RESPONSE_FROM_CLIENT, PATH_ERROR,
+                                      SHOULD_NOT_CREATE_USER)
 from django_saml2_auth.exceptions import SAMLAuthError
+
+# The recoverable login failures that answer with a redirect instead of the error page. A user
+# in an SSO-only tenant has no password to fall back on, so an error page strands them where a
+# redirect puts them back on a route they can act on. Each value names the key to read under
+# SAML2_AUTH["ERROR_REDIRECTS"]; an unset key keeps the error page.
+ERROR_REDIRECT_KEYS: Dict[int, str] = {
+    NO_SAML_RESPONSE_FROM_CLIENT: "NO_SAML_RESPONSE",
+    NO_METADATA_URL_ASSOCIATED: "NO_METADATA",
+    SHOULD_NOT_CREATE_USER: "USER_NOT_FOUND",
+    INACTIVE_USER: "INACTIVE_USER",
+}
 
 
 def run_hook(function_path: str,
@@ -127,6 +143,37 @@ def get_reverse(objects: Union[Any, Iterable[Any]]) -> Optional[str]:
     })
 
 
+def get_error_redirect_url(exc: Exception) -> Optional[str]:
+    """Resolve where a recoverable login failure should redirect to, if anywhere.
+
+    Args:
+        exc (Exception): The exception raised by the view
+
+    Returns:
+        Optional[str]: A URL to redirect to, or None to render the error page instead
+    """
+    if not isinstance(exc, SAMLAuthError) or not exc.extra:
+        return None
+
+    error_code = exc.extra.get("error_code")
+    redirect_key = ERROR_REDIRECT_KEYS.get(error_code) if isinstance(error_code, int) else None
+    if not redirect_key:
+        return None
+
+    target = dictor(settings.SAML2_AUTH, f"ERROR_REDIRECTS.{redirect_key}")
+    if not target:
+        return None
+
+    # A path or an absolute URL is used as given; anything else is a URL pattern name.
+    if target.startswith("/") or "://" in target:
+        return target
+
+    try:
+        return get_reverse(target)
+    except SAMLAuthError:
+        return None
+
+
 def exception_handler(
     function: Callable[..., Union[HttpResponse, HttpResponseRedirect]]) -> \
         Callable[..., Union[HttpResponse, HttpResponseRedirect]]:
@@ -152,6 +199,10 @@ def exception_handler(
         """
         logger = logging.getLogger(__name__)
         logger.debug(exc)
+
+        redirect_url = get_error_redirect_url(exc)
+        if redirect_url:
+            return HttpResponseRedirect(redirect_url)
 
         context: Optional[Dict[str, Any]] = exc.extra if isinstance(exc, SAMLAuthError) else {}
         if isinstance(exc, SAMLAuthError) and exc.extra:
