@@ -1,0 +1,39 @@
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    name: Test django-saml2-auth
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Only what Dashboard runs. This is a private fork consumed by git URL,
+        # so there is no reason to support versions our own apps do not use.
+        versions:
+          - { djangoVersion: "5.2.17", pythonVersion: "3.13" }
+    steps:
+      - name: Checkout 🛎️
+        uses: actions/checkout@v4
+      - name: Set up Python 🐍
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.versions.pythonVersion }}
+      - name: Install xmlsec1 📦
+        run: sudo apt-get update && sudo apt-get install -y xmlsec1
+      - name: Install dependencies 📦
+        run: |
+          python -m pip install -r requirements_test.txt
+          python -m pip install -e .
+          python -m pip install Django==${{ matrix.versions.djangoVersion }}
+      - name: Check types, syntax and docstrings 🦆
+        run: |
+          mypy django_saml2_auth
+          flake8 django_saml2_auth
+          interrogate --quiet --fail-under=95 .
+      - name: Test 🧪
+        run: pytest .
+      - name: Build a wheel and a source tarball 🏗️
+        run: |
+          python -m pip install build
+          python -m build --sdist --wheel .
