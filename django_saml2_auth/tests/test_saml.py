@@ -413,6 +413,25 @@ def test_get_saml_client_success(settings: SettingsWrapper):
     assert isinstance(result, Saml2Client)
 
 
+def test_get_saml_client_defaults_entity_id_to_acs_url(settings: SettingsWrapper):
+    """Test get_saml_client falls back to the acs URL when ENTITY_ID is unset.
+
+    pysaml2 raises "Missing entity_id specification" without one, so an unset ENTITY_ID must not
+    reach the config builder.
+
+    Args:
+        settings (SettingsWrapper): Fixture for django settings
+    """
+    saml2_auth_settings = deepcopy(settings.SAML2_AUTH)
+    saml2_auth_settings["METADATA_LOCAL_FILE_PATH"] = "django_saml2_auth/tests/metadata.xml"
+    saml2_auth_settings.pop("ENTITY_ID", None)
+    settings.SAML2_AUTH = saml2_auth_settings
+
+    result = get_saml_client("https://example.com", acs)
+    assert isinstance(result, Saml2Client)
+    assert result.config.entityid == "https://example.com/acs/"
+
+
 @responses.activate
 def test_get_saml_client_success_with_user_id(settings: SettingsWrapper):
     """Test get_saml_client function to verify if it is correctly instantiated with remote metadata

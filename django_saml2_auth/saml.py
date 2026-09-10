@@ -230,9 +230,9 @@ def get_saml_client(domain: str,
         },
     }
 
-    entity_id = saml2_auth_settings.get("ENTITY_ID")
-    if entity_id:
-        saml_settings["entityid"] = entity_id
+    # pysaml2 refuses to build a config without an entityid. Default it to the acs URL, which is
+    # what our IdP registrations already use as the SP entity id.
+    saml_settings["entityid"] = saml2_auth_settings.get("ENTITY_ID") or acs_url
 
     name_id_format = saml2_auth_settings.get("NAME_ID_FORMAT")
     if name_id_format:
