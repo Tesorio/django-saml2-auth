@@ -41,6 +41,7 @@ setup(
         "pysaml2>=4.5.0",
         "drf-jwt",
         "django-rest-auth",
+        "packaging",
     ],
     include_package_data=True,
 )
