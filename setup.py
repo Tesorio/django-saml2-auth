@@ -16,7 +16,10 @@ with open(path.join(here, "README.rst"), encoding="utf-8") as f:
 
 setup(
     name="django_saml2_auth",
-    version="3.0.0",
+    # Tesorio bump: v3.1.0 (83658bc) was tagged without updating this field,
+    # which left it out of sync with the tag; 3.1.1 corrects that drift for
+    # this patch release.
+    version="3.1.1",
     description="Django SAML2 Authentication Made Easy. Easily integrate with SAML2 SSO identity providers like Okta",
     long_description=long_description,
     url="https://github.com/fangli/django-saml2-auth",
@@ -41,6 +44,7 @@ setup(
         "pysaml2>=4.5.0",
         "drf-jwt",
         "django-rest-auth",
+        "packaging",
     ],
     include_package_data=True,
 )

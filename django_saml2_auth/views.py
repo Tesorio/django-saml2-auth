@@ -12,7 +12,7 @@ from django.shortcuts import render
 from django.template import TemplateDoesNotExist
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.csrf import csrf_exempt
-from pkg_resources import parse_version
+from packaging.version import parse as parse_version
 from saml2 import (
     BINDING_HTTP_POST,
     BINDING_HTTP_REDIRECT,
