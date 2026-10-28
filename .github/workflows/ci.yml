@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test django-saml2-auth
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        versions:
+          - { djangoVersion: "5.2.17", pythonVersion: "3.13" }
+    steps:
+      - name: Checkout 🛎️
+        uses: actions/checkout@v4
+      - name: Set up Python 🐍
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.versions.pythonVersion }}
+      - name: Install dependencies 📦
+        run: |
+          python -m pip install -e .
+          python -m pip install Django==${{ matrix.versions.djangoVersion }} build
+      - name: Smoke test the imports 💨
+        run: |
+          python - <<'PY'
+          import django
+          from django.conf import settings
+
+          settings.configure(
+              INSTALLED_APPS=[
+                  "django.contrib.auth",
+                  "django.contrib.contenttypes",
+                  "django_saml2_auth",
+              ],
+              DATABASES={"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}},
+              ROOT_URLCONF="django_saml2_auth.urls",
+              SAML2_AUTH={},
+          )
+          django.setup()
+          import django_saml2_auth.urls
+          import django_saml2_auth.views
+          PY
+      - name: Build a wheel and a source tarball 🏗️
+        run: python -m build --sdist --wheel .
